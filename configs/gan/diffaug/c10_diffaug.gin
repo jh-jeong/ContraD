@@ -1,0 +1,7 @@
+options.dataset = "cifar10_hflip"
+options.batch_size = 64
+options.loss = "nonsat"
+options.max_steps = 200000
+options.n_critic = 1
+options.lr = 2e-4
+options.beta = (0.5, 0.999)

@@ -1,0 +1,20 @@
+Gaussian.sigma = 0.12
+
+RandomCrop.max_pixels = 4
+RandomCrop.width = 32
+RandomCrop.padding_mode = "reflection"
+
+HorizontalFlipRandomCrop.max_pixels = 4
+HorizontalFlipRandomCrop.width = 32
+HorizontalFlipRandomCrop.padding_mode = "reflection"
+
+ColorJitterLayer.brightness = 0.4
+ColorJitterLayer.contrast = 0.4
+ColorJitterLayer.saturation = 0.4
+ColorJitterLayer.hue = 0.1
+
+CutOut.length = 15
+
+RandomResizeCropLayer.scale = (0.2, 1.0)
+
+GaussianBlur.sigma_range = (0.1, 2.0)

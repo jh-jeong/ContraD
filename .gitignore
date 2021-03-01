@@ -1,0 +1,20 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# numpy dump files
+*.npz
+
+# PyCharm project settings
+.idea/
+
+# Model log files
+logs/
+
+# macOS-related
+.DS_Store
+
