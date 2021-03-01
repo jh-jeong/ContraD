@@ -140,7 +140,7 @@ class G_D(nn.Module):
             gen_images = self.G(latent_samples, style_mix=style_mix)
 
         d_gen, aux_f = self.D(self.augment_fn(gen_images),
-                              sg_linear=True, projection=True, projection2=True)
+                              sg_linear=(not train_G), projection=True, projection2=True)
 
         if train_G:
             return d_gen
