@@ -52,7 +52,6 @@ You can change this path by setting the `$DATA_DIR` environment variable.
 1. Download the [CelebA-HQ dataset](https://github.com/switchablenorms/CelebAMask-HQ) and extract it under `$DATA_DIR`.
 2. Run [`third_party/preprocess_celeba_hq.py`](third_party/preprocess_celeba_hq.py) to resize and split the 1024x1024 images 
    in `$DATA_DIR/CelebAMask-HQ/CelebA-HQ-img`:
-   
    ```
    python third_party/preprocess_celeba_hq.py
    ```
