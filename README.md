@@ -38,7 +38,7 @@ conda env create -f environment.yml
 
 #### Install dependencies via pip.
 # It assumes `pytorch` and `tensorflow-gpu` are already installed in the current environment.
-pip install -r requirements_pip.txt
+pip install -r environment_pip.txt
 ```
 
 ### Preparing datasets
