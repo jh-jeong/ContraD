@@ -174,10 +174,9 @@ def fid_inception_v3():
     This method first constructs torchvision's Inception and then patches the
     necessary parts that are different in the FID Inception model.
     """
-    inception = models.inception_v3(num_classes=1008,
-                                    aux_logits=False,
-                                    pretrained=False,
-                                    init_weights=False)
+    from utils import call_with_accepted_args
+    inception = call_with_accepted_args(models.Inception3,
+                                        num_classes=1008, aux_logits=False, init_weights=False)
     inception.Mixed_5b = FIDInceptionA(192, pool_features=32)
     inception.Mixed_5c = FIDInceptionA(256, pool_features=64)
     inception.Mixed_5d = FIDInceptionA(288, pool_features=64)

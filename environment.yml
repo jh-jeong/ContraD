@@ -1,5 +1,6 @@
 name: contrad
 channels:
+  - conda-forge
   - pytorch
   - defaults
 dependencies:
@@ -10,7 +11,7 @@ dependencies:
   - pandas
   - pillow
   - pip
-  - python=3.7
+  - python=3
   - pytorch
   - scipy
   - tensorflow-gpu=1.14
