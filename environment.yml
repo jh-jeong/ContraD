@@ -1,6 +1,5 @@
 name: contrad
 channels:
-  - conda-forge
   - pytorch
   - defaults
 dependencies:
