@@ -1,4 +1,4 @@
-options.dataset = "afhq_dog"
+options.dataset = "afhq_cat"
 options.batch_size = 64
 options.loss = "nonsat"
 options.max_steps = 400000
