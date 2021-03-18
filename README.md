@@ -1,7 +1,7 @@
 # Training GANs with Stronger Augmentations via Contrastive Discriminator (ICLR 2021)
 
-This repository contains the code for reproducing the paper
-**"Training GANs with Stronger Augmentations via Contrastive Discriminator"** 
+This repository contains the code for reproducing the paper:
+**[Training GANs with Stronger Augmentations via Contrastive Discriminator](https://arxiv.org/abs/2103.09742)** 
 by [Jongheon Jeong](https://sites.google.com/view/jongheonj) and [Jinwoo Shin](http://alinlab.kaist.ac.kr/shin.html). 
 
 **TL;DR**: *We propose a novel discriminator of GAN showing that contrastive representation 
