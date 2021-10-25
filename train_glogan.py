@@ -109,7 +109,7 @@ def _sample_generator(G, num_samples, enable_grad=True):
     latent_samples = G.sample_latent(num_samples)
     with torch.set_grad_enabled(enable_grad):
         generated_data = G(latent_samples)
-    return generated_data
+    return generated_data, latent_samples
 
 
 @gin.configurable("options")
@@ -152,7 +152,7 @@ def train(P, opt, train_fn, models, optimizers, train_loader, logger):
     logger.log_dirname("Steps {}".format(P.starting_step))
     dist.barrier()
 
-    reconstructive_loss = LapLoss(max_levels=3)
+    reconstructive_loss_fn = LapLoss(max_levels=3)
 
 
     for step in range(P.starting_step, opt['max_steps']+1):
@@ -171,7 +171,7 @@ def train(P, opt, train_fn, models, optimizers, train_loader, logger):
         for i in range(opt['n_critic']):
             images, labels, idx = next(train_loader)
             images = images.cuda()
-            gen_images = _sample_generator(generator, images.size(0),
+            gen_images, z_f = _sample_generator(generator, images.size(0),
                                            enable_grad=False)
 
             d_loss, aux = train_fn["D"](P, discriminator, opt, images, gen_images)
@@ -190,7 +190,7 @@ def train(P, opt, train_fn, models, optimizers, train_loader, logger):
         set_grad(generator, True)
         set_grad(discriminator, False)
 
-        gen_images = _sample_generator(generator, images.size(0))
+        gen_images, z_f = _sample_generator(generator, images.size(0))
         g_loss = train_fn["G"](P, discriminator, opt, images, gen_images)
 
         opt_G.zero_grad()
@@ -212,7 +212,7 @@ def train(P, opt, train_fn, models, optimizers, train_loader, logger):
                 {'params': z_batch, 'lr': 10}
             ])
 
-            recon_loss = train_fn["Z"](P, discriminator, generator, z_batch, reconstructive_loss, images)
+            recon_loss = train_fn["Z"](P, discriminator, generator, z_batch, z_f, reconstructive_loss_fn, images)
             loss = recon_loss
             opt_Z.zero_grad()
             loss.backward()

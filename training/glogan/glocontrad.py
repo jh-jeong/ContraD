@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 
 from third_party.gather_layer import GatherLayer
-from training.criterion import nt_xent
+from training.criterion import nt_xent, nt_xent4z
 
 
 def _sample_generator(G, num_samples, enable_grad=True):
@@ -88,7 +88,7 @@ def loss_G_fn(P, D, options, images, gen_images):
     return g_loss
 
 
-def loss_Z_fn(P, D, G, z, reconstructive_loss, images):
+def loss_Z_fn(P, D, G, z, z_f, reconstructive_loss_fn, images):
     N = images.size(0)
 
     z_r1 = z[:,0,:].reshape(N,-1)
@@ -100,7 +100,7 @@ def loss_Z_fn(P, D, G, z, reconstructive_loss, images):
     real_views = P.augment_fn(torch.cat([images, images], dim=0))
     gen_views = torch.cat([gen_1, gen_2], dim=0)
 
-    recon_loss = reconstructive_loss(real_views, gen_views)
-    simclr_loss = nt_xent(z_r1, z_r2, temperature=P.z_temp, distributed=P.distributed, normalize=True)
+    recon_loss = reconstructive_loss_fn(real_views, gen_views)
+    simclr_loss = nt_xent4z(z_r1, z_r2, z_f, temperature=P.z_temp, distributed=P.distributed, normalize=True)
 
     return recon_loss + P.z_contraloss_weight*simclr_loss

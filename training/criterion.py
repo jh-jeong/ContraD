@@ -44,6 +44,31 @@ def nt_xent(out1, out2, temperature=0.1, distributed=False, normalize=False):
 
     return loss
 
+def nt_xent4z(out1, out2, neg, temperature=0.1, distributed=False, normalize=False):
+    """Compute NT_xent loss"""
+    assert out1.size(0) == out2.size(0)
+    if normalize:
+        out1 = F.normalize(out1)
+        out2 = F.normalize(out2)
+    if distributed:
+        out1 = torch.cat(GatherLayer.apply(out1), dim=0)
+        out2 = torch.cat(GatherLayer.apply(out2), dim=0)
+    N = out1.size(0)
+
+    _out = [out1, out2]
+    _outplusneg = [out1, out2, neg]
+    outputs = torch.cat(_out, dim=0)
+    outplusneg = torch.cat(_outplusneg, dim=0)
+
+    sim_matrix = outputs @ outplusneg.t()
+    sim_matrix = sim_matrix / temperature
+
+    sim_matrix.fill_diagonal_(-5e4)
+    sim_matrix = F.log_softmax(sim_matrix, dim=1)
+    loss = -torch.sum(sim_matrix[:N, N:2*N].diag() + sim_matrix[N:2*N, :N].diag()) / (2*N)
+
+    return loss
+
 
 class LapLoss(nn.Module):
     def __init__(self, max_levels=5, k_size=5, sigma=2.0):
