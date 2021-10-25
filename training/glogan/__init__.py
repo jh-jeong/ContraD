@@ -2,10 +2,11 @@ from importlib import import_module
 
 
 def setup(P):
-    mod = import_module(f'.{P.mode}', 'training.gan')
+    mod = import_module(f'.{P.mode}', 'training.glogan')
 
     loss_G_fn = mod.loss_G_fn
     loss_D_fn = mod.loss_D_fn
+    loss_Z_fn = mod.loss_Z_fn
 
     if P.mode == 'std':
         filename = f"{P.mode}_{P.penalty}"
@@ -20,7 +21,7 @@ def setup(P):
     elif P.mode == 'contrad':
         filename = f"{P.mode}_{P.aug}_L{P.lbd_a}_T{P.temp}"
     elif P.mode == 'glocontrad':
-        filename = f"{P.mode}"
+        filename = f"{P.mode}_Ztemp{P.z_temp}_Znoise{P.z_noise_factor}_Zcontra{P.z_contraloss_weight}"
     else:
         raise NotImplementedError()
 
@@ -28,5 +29,6 @@ def setup(P):
     P.train_fn = {
         "G": loss_G_fn,
         "D": loss_D_fn,
+        "Z": loss_Z_fn
     }
     return P

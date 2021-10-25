@@ -1,0 +1,22 @@
+options.dataset = "afhq_cat"
+options.batch_size = 64
+options.loss = "nonsat"
+options.max_steps = 400000
+options.n_critic = 1
+options.lr = 0.0025
+options.beta = (0.0, 0.99)
+
+options.fid_size = 50000
+
+RandomCrop.max_pixels = 64
+RandomCrop.width = 512
+HorizontalFlipRandomCrop.max_pixels = 64
+HorizontalFlipRandomCrop.width = 512
+
+RandomResizeCropLayer.scale = (0.08, 1.0)
+ColorJitterLayer.brightness = 0.8
+ColorJitterLayer.contrast = 0.8
+ColorJitterLayer.saturation = 0.8
+ColorJitterLayer.hue = 0.2
+
+CutOut.length = 255

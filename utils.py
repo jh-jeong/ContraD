@@ -11,6 +11,9 @@ from torch.nn.utils import spectral_norm
 import numpy as np
 from tensorboardX import SummaryWriter
 
+def project_l2_ball(z):
+    """ project the vectors in z onto the l2 unit norm ball"""
+    return z / np.maximum(np.sqrt(np.sum(z**2, axis=1))[:, np.newaxis], 1)
 
 class Logger(object):
     """Reference: https://gist.github.com/gyglim/1f8dfb1b5c82627ae3efcfbbadb9f514"""
@@ -89,8 +92,8 @@ def fwrite(filename: str, text: str):
 def cycle(dataloader, distributed=False):
     epoch = 0
     while True:
-        for images, targets in dataloader:
-            yield images, targets
+        for images, targets, indexs in dataloader:
+            yield images, targets, indexs
         epoch += 1
         if distributed:
             dataloader.sampler.set_epoch(epoch)

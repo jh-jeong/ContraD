@@ -2,12 +2,17 @@ from argparse import ArgumentParser
 from pathlib import Path
 import shutil
 import os
-
+import torch.nn.functional as F
 import imageio
+
+from models.latent import get_latent
+from training.criterion import LapLoss
+
+
 def silence_imageio_warning(*args, **kwargs):
     pass
 imageio.core.util._precision_warn = silence_imageio_warning
-
+from torch.autograd import Variable
 import gin
 import numpy as np
 import torch
@@ -26,10 +31,11 @@ from augment import get_augment
 from models.gan import get_architecture
 from utils import cycle
 
-from training.gan import setup
+from training.glogan import setup
 from utils import Logger
 from utils import count_parameters
 from utils import set_grad
+from utils import project_l2_ball
 
 # import for gin binding
 import penalty
@@ -50,7 +56,13 @@ def parse_args():
 
     # Hyperparameters
     parser.add_argument('--temp', default=0.1, type=float,
-                        help='Temperature hyperparameter for contrastive losses')
+                        help='Temperature hyperparameter for contrastive losses in view space')
+    parser.add_argument('--z_temp', default=0.1, type=float,
+                        help='Temperature hyperparameter for contrastive losses in z space')
+    parser.add_argument('--z_noise_factor', default=0.05, type=float,
+                        help='Strength for bias in z space')
+    parser.add_argument('--z_contraloss_weight', default=0.1, type=float,
+                        help='Weight for contrastive losses in z space')
     parser.add_argument('--lbd_a', default=1.0, type=float,
                         help='Relative strength of the fake loss of ContraD')
 
@@ -104,7 +116,7 @@ def _sample_generator(G, num_samples, enable_grad=True):
 def get_options_dict(dataset=gin.REQUIRED,
                      loss=gin.REQUIRED,
                      batch_size=64, fid_size=10000,
-                     max_steps=200000, warmup=0, n_critic=1,
+                     max_steps=200000, warmup=0, n_critic=1, n_latent=1,
                      lr=2e-4, lr_d=None, beta=(.5, .999),
                      lbd=10., lbd2=10.):
     if lr_d is None:
@@ -116,17 +128,19 @@ def get_options_dict(dataset=gin.REQUIRED,
         "loss": loss,
         "max_steps": max_steps, "warmup": warmup,
         "n_critic": n_critic,
+        "n_latent": n_latent,
         "lr": lr, "lr_d": lr_d, "beta": beta,
         "lbd": lbd, "lbd2": lbd2
     }
 
 
-def train(P, opt, train_fn, models, optimizers, train_loader, logger):
-    generator, discriminator = models
-    opt_G, opt_D = optimizers
 
+def train(P, opt, train_fn, models, optimizers, train_loader, logger):
+    generator, discriminator, z = models
+    opt_G, opt_D, opt_Z = optimizers
     losses = {'G_loss': [], 'D_loss': [], 'D_penalty': [],
-              'D_real': [], 'D_gen': []}
+              'D_real': [], 'D_gen': [],
+              'Z_loss': []}
     metrics = {}
 
     if P.rank == 0:
@@ -138,24 +152,30 @@ def train(P, opt, train_fn, models, optimizers, train_loader, logger):
     logger.log_dirname("Steps {}".format(P.starting_step))
     dist.barrier()
 
+    reconstructive_loss = LapLoss(max_levels=3)
+
+
     for step in range(P.starting_step, opt['max_steps']+1):
         generator.train()
         discriminator.train()
+
         if P.use_warmup:
             _update_warmup(opt_G, step, opt["warmup"], opt["lr"])
             _update_warmup(opt_D, step, opt["warmup"], opt["lr_d"])
 
+        # Training D
         # Essential for training w/ multiple DDP models
         set_grad(generator, False)
         set_grad(discriminator, True)
 
         for i in range(opt['n_critic']):
-            images, labels = next(train_loader)
+            images, labels, idx = next(train_loader)
             images = images.cuda()
-            gen_images = _sample_generator(generator, images.size(0),
-                                           enable_grad=False)
+            z_batch = torch.zeros((images.shape[0], 128))
+            z_batch = Variable(z_batch, requires_grad=False)
+            z_batch.data = torch.FloatTensor(z[idx.numpy()]).cuda()
 
-            d_loss, aux = train_fn["D"](P, discriminator, opt, images, gen_images)
+            d_loss, aux = train_fn["D"](P, discriminator, generator, z_batch, opt, images)
             loss = d_loss + aux['penalty']
 
             opt_D.zero_grad()
@@ -166,24 +186,47 @@ def train(P, opt, train_fn, models, optimizers, train_loader, logger):
             losses['D_real'].append(aux['d_real'].item())
             losses['D_gen'].append(aux['d_gen'].item())
 
+        # Training G
         # Essential for training w/ multiple DDP models
         set_grad(generator, True)
         set_grad(discriminator, False)
 
-        gen_images = _sample_generator(generator, images.size(0))
-        g_loss = train_fn["G"](P, discriminator, opt, images, gen_images)
+        g_loss = train_fn["G"](P, discriminator, generator, z_batch, opt, images)
 
         opt_G.zero_grad()
         g_loss.backward()
         opt_G.step()
         losses['G_loss'].append(g_loss.item())
 
+        # Training Z
+        # Essential for training w/ multiple DDP models
+        set_grad(generator, False)
+        set_grad(discriminator, False)
+
+        for i in range(opt['n_latent']):
+            images, labels, idx = next(train_loader)
+            images = images.cuda()
+            z_batch = torch.zeros((images.shape[0], 128))
+            z_batch = Variable(z_batch, requires_grad=True)
+            z_batch.data = torch.FloatTensor(z[idx.numpy()]).cuda()
+
+            recon_loss = train_fn["Z"](P, discriminator, generator, z_batch, reconstructive_loss, images)
+            loss = recon_loss
+            opt_Z = optim.SGD([
+                {'params': z_batch, 'lr': 10}
+            ])
+            opt_Z.zero_grad()
+            loss.backward()
+            opt_Z.step()
+            losses['Z_loss'].append(loss.item())
+            z[idx] = project_l2_ball(z_batch.data.cpu().numpy())
+
         generator.eval()
         discriminator.eval()
 
         if step % P.print_every == 0 and P.rank == 0:
-            logger.log('[Steps %7d] [G %.3f] [D %.3f]' %
-                       (step, losses['G_loss'][-1], losses['D_loss'][-1]))
+            logger.log('[Steps %7d] [G %.3f] [D %.3f] [Z %.3f]' %
+                       (step, losses['G_loss'][-1], losses['D_loss'][-1], losses['Z_loss'][-1]))
             for name in losses:
                 values = losses[name]
                 if len(values) > 0:
@@ -210,18 +253,23 @@ def train(P, opt, train_fn, models, optimizers, train_loader, logger):
 
             G_state_dict = generator.module.state_dict()
             D_state_dict = discriminator.module.state_dict()
+            # Z_state_dict = z.module.state_dict()
             torch.save(G_state_dict, logger.logdir + '/gen.pt')
             torch.save(D_state_dict, logger.logdir + '/dis.pt')
+            # torch.save(Z_state_dict, logger.logdir + '/z.pt')
             if fid_score and fid_score.is_best:
                 torch.save(G_state_dict, logger.logdir + '/gen_best.pt')
                 torch.save(D_state_dict, logger.logdir + '/dis_best.pt')
+                # torch.save(Z_state_dict, logger.logdir + '/z_best.pt')
             if step % P.save_every == 0:
                 torch.save(G_state_dict, logger.logdir + f'/gen_{step}.pt')
                 torch.save(D_state_dict, logger.logdir + f'/dis_{step}.pt')
+                # torch.save(Z_state_dict, logger.logdir + f'/z_{step}.pt')
             torch.save({
                 'epoch': step,
                 'optim_G': opt_G.state_dict(),
                 'optim_D': opt_D.state_dict(),
+                'optim_Z': opt_Z.state_dict(),
             }, logger.logdir + '/optim.pt')
 
         dist.barrier()
@@ -241,7 +289,7 @@ def worker(gpu, P):
                             world_size=P.world_size,
                             rank=P.rank)
 
-    train_set, _, image_size = get_dataset(dataset=options['dataset'])
+    train_set, _, image_size = get_dataset(dataset=options['dataset'], indexed=True)
     train_sampler = DistributedSampler(train_set)
 
     options['batch_size'] = options['batch_size'] // P.n_gpus_per_node
@@ -252,32 +300,43 @@ def worker(gpu, P):
     train_loader = cycle(train_loader, distributed=True)
 
     generator, discriminator = get_architecture(P.architecture, image_size, P=P)
+    z = get_latent(len(train_set), P.architecture, init_method='random')
+
     if P.resume:
         print(f"=> Loading checkpoint from '{P.resume}'")
         state_G = torch.load(f"{P.resume}/gen.pt")
         state_D = torch.load(f"{P.resume}/dis.pt")
+        state_Z = torch.load(f"{P.resume}/z.pt")
         generator.load_state_dict(state_G)
         discriminator.load_state_dict(state_D)
+        z.load_state_dict(state_Z)
+
     if P.finetune:
         print(f"=> Loading checkpoint for fine-tuning: '{P.finetune}'")
         state_D = torch.load(f"{P.finetune}/dis.pt")
         discriminator.load_state_dict(state_D, strict=False)
         discriminator.reset_parameters(discriminator.linear)
+        z.load_state_dict(state_Z)
         P.comment += 'ft'
 
     generator = nn.SyncBatchNorm.convert_sync_batchnorm(generator)
     discriminator = nn.SyncBatchNorm.convert_sync_batchnorm(discriminator)
+    # z = nn.SyncBatchNorm.convert_sync_batchnorm(z)
     generator = generator.cuda()
     discriminator = discriminator.cuda()
 
     G_optimizer = optim.Adam(generator.parameters(), lr=options["lr"], betas=options["beta"])
     D_optimizer = optim.Adam(discriminator.parameters(), lr=options["lr_d"], betas=options["beta"])
+    Z_optimizer = optim.Adam(discriminator.parameters(), lr=options["lr"], betas=options["beta"])
 
     if P.rank == 0:
         if P.resume:
             logger = Logger(None, resume=P.resume)
         else:
-            logger = Logger(f'{P.filename}{P.comment}', subdir=f'gan/{P.gin_stem}/{P.architecture}')
+            if "glo" not in P.mode:
+                logger = Logger(f'{P.filename}{P.comment}', subdir=f'gan/{P.gin_stem}/{P.architecture}')
+            else:
+                logger = Logger(f'{P.filename}{P.comment}', subdir=f'glogan/{P.gin_stem}/{P.architecture}')
             shutil.copy2(P.gin_config, f"{logger.logdir}/config.gin")
         P.logdir = logger.logdir
         P.eval_seed = np.random.randint(10000)
@@ -293,11 +352,13 @@ def worker(gpu, P):
         opt = torch.load(f"{P.resume}/optim.pt")
         G_optimizer.load_state_dict(opt['optim_G'])
         D_optimizer.load_state_dict(opt['optim_D'])
+        D_optimizer.load_state_dict(opt['optim_Z'])
         logger.log(f"Checkpoint loaded from '{P.resume}'")
         P.starting_step = opt['epoch'] + 1
     else:
         logger.log(generator)
         logger.log(discriminator)
+        logger.log(z)
         logger.log(f"# Params - G: {count_parameters(generator)}, D: {count_parameters(discriminator)}")
         logger.log(options)
         P.starting_step = 1
@@ -313,8 +374,8 @@ def worker(gpu, P):
     discriminator = DistributedDataParallel(discriminator, device_ids=[gpu], broadcast_buffers=False)
 
     train(P, options, P.train_fn,
-          models=(generator, discriminator),
-          optimizers=(G_optimizer, D_optimizer),
+          models=(generator, discriminator, z),
+          optimizers=(G_optimizer, D_optimizer, Z_optimizer),
           train_loader=train_loader, logger=logger)
 
 
