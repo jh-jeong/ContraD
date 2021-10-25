@@ -21,10 +21,10 @@ def get_latent(dataset_size, architecture, init_method='random'):
 
     # init z
     if init_method == 'random':
-        z = np.random.randn(dataset_size, latent_size)
+        z = np.random.randn(dataset_size, 2, latent_size)
     elif init_method == 'pca':
         raise NotImplementedError()
     else:
         raise NotImplementedError()
 
-    return project_l2_ball(z)
+    return project_l2_ball(z.reshape(dataset_size,-1)).reshape(dataset_size, 2, latent_size)

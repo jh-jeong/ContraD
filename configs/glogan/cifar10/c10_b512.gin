@@ -3,6 +3,6 @@ options.batch_size = 512
 options.loss = "nonsat"
 options.max_steps = 200000
 options.n_critic = 1
-options.n_latent = 1
+options.n_latent = 0
 options.lr = 2e-4
 options.beta = (0.5, 0.999)

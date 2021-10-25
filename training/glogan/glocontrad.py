@@ -37,12 +37,9 @@ def supcon_fake(out1, out2, others, temperature, distributed=False):
     d_loss = -lsm.sum(1).mean()
     return d_loss
 
-
-def loss_D_fn(P, D, G, z, options, images):
-    with torch.set_grad_enabled(False):
-        gen_images = G(z)
-    gen_images = gen_images.detach()
+def loss_D_fn(P, D, options, images, gen_images):
     assert images.size(0) == gen_images.size(0)
+    gen_images = gen_images.detach()
     N = images.size(0)
 
     cat_images = torch.cat([images, images, gen_images], dim=0)
@@ -78,9 +75,8 @@ def loss_D_fn(P, D, G, z, options, images):
     }
 
 
-def loss_G_fn(P, D, G, z, options, images):
-    with torch.set_grad_enabled(True):
-        gen_images = G(z)
+
+def loss_G_fn(P, D, options, images, gen_images):
     d_gen = D(P.augment_fn(gen_images))
     if options['loss'] == 'nonsat':
         g_loss = F.softplus(-d_gen).mean()
@@ -93,12 +89,13 @@ def loss_G_fn(P, D, G, z, options, images):
 
 
 def loss_Z_fn(P, D, G, z, reconstructive_loss, images):
-    z_r1 = z + P.z_noise_factor*torch.randn(z.shape).cuda()
-    z_r2 = z + P.z_noise_factor*torch.randn(z.shape).cuda()
+    N = images.size(0)
+
+    z_r1 = z[:,0,:].reshape(N,-1)
+    z_r2 = z[:,1,:].reshape(N,-1)
     gen_1 = G(z_r1)
     gen_2 = G(z_r2)
 
-    N = images.size(0)
 
     real_views = P.augment_fn(torch.cat([images, images], dim=0))
     gen_views = torch.cat([gen_1, gen_2], dim=0)

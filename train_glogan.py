@@ -61,7 +61,7 @@ def parse_args():
                         help='Temperature hyperparameter for contrastive losses in z space')
     parser.add_argument('--z_noise_factor', default=0.05, type=float,
                         help='Strength for bias in z space')
-    parser.add_argument('--z_contraloss_weight', default=0.1, type=float,
+    parser.add_argument('--z_contraloss_weight', default=1, type=float,
                         help='Weight for contrastive losses in z space')
     parser.add_argument('--lbd_a', default=1.0, type=float,
                         help='Relative strength of the fake loss of ContraD')
@@ -190,43 +190,46 @@ def train(P, opt, train_fn, models, optimizers, train_loader, logger):
         set_grad(generator, True)
         set_grad(discriminator, False)
 
-        g_loss = train_fn["G"](P, discriminator, generator, z_batch, opt, images)
+        gen_images = _sample_generator(generator, images.size(0))
+        g_loss = train_fn["G"](P, discriminator, opt, images, gen_images)
 
         opt_G.zero_grad()
         g_loss.backward()
         opt_G.step()
         losses['G_loss'].append(g_loss.item())
 
-        # Training Z
-        # Essential for training w/ multiple DDP models
-        set_grad(generator, False)
-        set_grad(discriminator, False)
 
         for i in range(opt['n_latent']):
             images, labels, idx = next(train_loader)
             images = images.cuda()
-            z_batch = torch.zeros((images.shape[0], 128))
+            N = images.shape[0]
+
+            z_batch = torch.zeros((512, 2, 128)).cuda()
             z_batch = Variable(z_batch, requires_grad=True)
             z_batch.data = torch.FloatTensor(z[idx.numpy()]).cuda()
 
-            recon_loss = train_fn["Z"](P, discriminator, generator, z_batch, reconstructive_loss, images)
-            loss = recon_loss
             opt_Z = optim.SGD([
                 {'params': z_batch, 'lr': 10}
             ])
+
+            recon_loss = train_fn["Z"](P, discriminator, generator, z_batch, reconstructive_loss, images)
+            loss = recon_loss
             opt_Z.zero_grad()
             loss.backward()
             opt_Z.step()
             losses['Z_loss'].append(loss.item())
-            z[idx] = project_l2_ball(z_batch.data.cpu().numpy())
+            z[idx] = project_l2_ball(z_batch.data.cpu().numpy().reshape(N, -1)).reshape(N, 2, -1)
 
         generator.eval()
         discriminator.eval()
 
         if step % P.print_every == 0 and P.rank == 0:
-            logger.log('[Steps %7d] [G %.3f] [D %.3f] [Z %.3f]' %
-                       # (step, losses['G_loss'][-1], losses['D_loss'][-1], losses['Z_loss'][-1]))
-                       (step, losses['G_loss'][-1], losses['D_loss'][-1], 'z_loss'))
+            if opt['n_latent'] != 0:
+                logger.log('[Steps %7d] [G %.3f] [D %.3f] [Z %.3f]' %
+                       (step, losses['G_loss'][-1], losses['D_loss'][-1], losses['Z_loss'][-1]))
+            else:
+                logger.log('[Steps %7d] [G %.3f] [D %.3f]' %
+                           (step, losses['G_loss'][-1], losses['D_loss'][-1]))
             for name in losses:
                 values = losses[name]
                 if len(values) > 0:
