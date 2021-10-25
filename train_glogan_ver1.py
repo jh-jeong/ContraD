@@ -171,10 +171,11 @@ def train(P, opt, train_fn, models, optimizers, train_loader, logger):
         for i in range(opt['n_critic']):
             images, labels, idx = next(train_loader)
             images = images.cuda()
-            gen_images = _sample_generator(generator, images.size(0),
-                                           enable_grad=False)
+            z_batch = torch.zeros((images.shape[0], 128))
+            z_batch = Variable(z_batch, requires_grad=False)
+            z_batch.data = torch.FloatTensor(z[idx.numpy()]).cuda()
 
-            d_loss, aux = train_fn["D"](P, discriminator, opt, images, gen_images)
+            d_loss, aux = train_fn["D"](P, discriminator, generator, z_batch, opt, images)
             loss = d_loss + aux['penalty']
 
             opt_D.zero_grad()
