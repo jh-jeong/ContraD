@@ -63,6 +63,8 @@ def parse_args():
                         help='Weight for contrastive losses in z space')
     parser.add_argument('--lbd_a', default=1.0, type=float,
                         help='Relative strength of the fake loss of ContraD')
+    parser.add_argument('--z_init', default='random', type=str,
+                        help='init method for latent')
 
     # Options for logging specification
     parser.add_argument('--no_fid', action='store_true',
@@ -136,8 +138,8 @@ def get_options_dict(dataset=gin.REQUIRED,
 def train(P, opt, train_fn, models, optimizers, train_loader, logger):
     generator, discriminator, z = models
     opt_G, opt_D, opt_Z = optimizers
-    losses = {'G_loss': [], 'D_loss': [], 'D_penalty': [],
-              'D_real': [], 'D_gen': [],
+    losses = {'G_loss': [0], 'D_loss': [0], 'D_penalty': [0],
+              'D_real': [0], 'D_gen': [0],
               'Z_loss': []}
     metrics = {}
 
@@ -154,52 +156,52 @@ def train(P, opt, train_fn, models, optimizers, train_loader, logger):
 
 
     for step in range(P.starting_step, opt['max_steps']+1):
-        generator.train()
-        discriminator.train()
-
-        if P.use_warmup:
-            _update_warmup(opt_G, step, opt["warmup"], opt["lr"])
-            _update_warmup(opt_D, step, opt["warmup"], opt["lr_d"])
-
-        # Training D
-        # Essential for training w/ multiple DDP models
-        set_grad(generator, False)
-        set_grad(discriminator, True)
-
-        for i in range(opt['n_critic']):
-            images, labels, idx = next(train_loader)
-            images = images.cuda()
-            gen_images, z_f = _sample_generator(generator, images.size(0),
-                                           enable_grad=False)
-
-            d_loss, aux = train_fn["D"](P, discriminator, opt, images, gen_images)
-            loss = d_loss + aux['penalty']
-
-            opt_D.zero_grad()
-            loss.backward()
-            opt_D.step()
-            losses['D_loss'].append(d_loss.item())
-            losses['D_penalty'].append(aux['penalty'].item())
-            losses['D_real'].append(aux['d_real'].item())
-            losses['D_gen'].append(aux['d_gen'].item())
-
-        # Training G
-        # Essential for training w/ multiple DDP models
-        set_grad(generator, True)
-        set_grad(discriminator, False)
-
-        gen_images, z_f = _sample_generator(generator, images.size(0))
-        g_loss = train_fn["G"](P, discriminator, opt, images, gen_images)
-
-        opt_G.zero_grad()
-        g_loss.backward()
-        opt_G.step()
-        losses['G_loss'].append(g_loss.item())
+        # generator.train()
+        # discriminator.train()
+        #
+        # if P.use_warmup:
+        #     _update_warmup(opt_G, step, opt["warmup"], opt["lr"])
+        #     _update_warmup(opt_D, step, opt["warmup"], opt["lr_d"])
+        #
+        # # Training D
+        # # Essential for training w/ multiple DDP models
+        # set_grad(generator, False)
+        # set_grad(discriminator, True)
+        #
+        # for i in range(opt['n_critic']):
+        #     images, labels, idx = next(train_loader)
+        #     images = images.cuda()
+        #     gen_images, z_f = _sample_generator(generator, images.size(0),
+        #                                    enable_grad=False)
+        #
+        #     d_loss, aux = train_fn["D"](P, discriminator, opt, images, gen_images)
+        #     loss = d_loss + aux['penalty']
+        #
+        #     opt_D.zero_grad()
+        #     loss.backward()
+        #     opt_D.step()
+        #     losses['D_loss'].append(d_loss.item())
+        #     losses['D_penalty'].append(aux['penalty'].item())
+        #     losses['D_real'].append(aux['d_real'].item())
+        #     losses['D_gen'].append(aux['d_gen'].item())
+        #
+        # # Training G
+        # # Essential for training w/ multiple DDP models
+        # set_grad(generator, True)
+        # set_grad(discriminator, False)
+        #
+        # gen_images, z_f = _sample_generator(generator, images.size(0))
+        # g_loss = train_fn["G"](P, discriminator, opt, images, gen_images)
+        #
+        # opt_G.zero_grad()
+        # g_loss.backward()
+        # opt_G.step()
+        # losses['G_loss'].append(g_loss.item())
 
 
         # Training Z
         # Essential for training w/ multiple DDP models
-        set_grad(generator, False)
+        set_grad(generator, True)
         set_grad(discriminator, False)
         for i in range(opt['n_latent']):
             images, labels, idx = next(train_loader)
@@ -209,6 +211,10 @@ def train(P, opt, train_fn, models, optimizers, train_loader, logger):
             z_batch = torch.zeros((512, 2, 128)).cuda()
             z_batch = Variable(z_batch, requires_grad=True)
             z_batch.data = torch.FloatTensor(z[idx.numpy()]).cuda()
+
+            ## for test glo only
+            z_f = 1
+
 
             recon_loss = train_fn["Z"](P, discriminator, generator, z_batch, z_f, reconstructive_loss_fn, images)
             loss = recon_loss
@@ -301,7 +307,7 @@ def worker(gpu, P):
     train_loader = cycle(train_loader, distributed=True)
 
     generator, discriminator = get_architecture(P.architecture, image_size, P=P)
-    z = get_latent(len(train_set), P.architecture, init_method='random')
+    z = get_latent(len(train_set), P.architecture, train_loader, init_method=P.z_init)
 
     if P.resume:
         print(f"=> Loading checkpoint from '{P.resume}'")

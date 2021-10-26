@@ -21,7 +21,7 @@ def setup(P):
     elif P.mode == 'contrad':
         filename = f"{P.mode}_{P.aug}_L{P.lbd_a}_T{P.temp}"
     elif P.mode == 'glocontrad':
-        filename = f"{P.mode}_Ztemp{P.z_temp}_Znoise{P.z_noise_factor}_Zcontra{P.z_contraloss_weight}"
+        filename = f"{P.mode}_Ztemp{P.z_temp}_Zinit{P.z_init}_Zcontra{P.z_contraloss_weight}"
     else:
         raise NotImplementedError()
 
