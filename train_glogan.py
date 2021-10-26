@@ -59,8 +59,6 @@ def parse_args():
                         help='Temperature hyperparameter for contrastive losses in view space')
     parser.add_argument('--z_temp', default=0.1, type=float,
                         help='Temperature hyperparameter for contrastive losses in z space')
-    parser.add_argument('--z_noise_factor', default=0.05, type=float,
-                        help='Strength for bias in z space')
     parser.add_argument('--z_contraloss_weight', default=1, type=float,
                         help='Weight for contrastive losses in z space')
     parser.add_argument('--lbd_a', default=1.0, type=float,
@@ -199,6 +197,10 @@ def train(P, opt, train_fn, models, optimizers, train_loader, logger):
         losses['G_loss'].append(g_loss.item())
 
 
+        # Training Z
+        # Essential for training w/ multiple DDP models
+        set_grad(generator, False)
+        set_grad(discriminator, False)
         for i in range(opt['n_latent']):
             images, labels, idx = next(train_loader)
             images = images.cuda()
@@ -207,10 +209,6 @@ def train(P, opt, train_fn, models, optimizers, train_loader, logger):
             z_batch = torch.zeros((512, 2, 128)).cuda()
             z_batch = Variable(z_batch, requires_grad=True)
             z_batch.data = torch.FloatTensor(z[idx.numpy()]).cuda()
-
-            opt_Z = optim.SGD([
-                {'params': z_batch, 'lr': 10}
-            ])
 
             recon_loss = train_fn["Z"](P, discriminator, generator, z_batch, z_f, reconstructive_loss_fn, images)
             loss = recon_loss
@@ -256,18 +254,18 @@ def train(P, opt, train_fn, models, optimizers, train_loader, logger):
 
             G_state_dict = generator.module.state_dict()
             D_state_dict = discriminator.module.state_dict()
-            # Z_state_dict = z.module.state_dict()
+            Z_state_dict = torch.from_numpy(z)
             torch.save(G_state_dict, logger.logdir + '/gen.pt')
             torch.save(D_state_dict, logger.logdir + '/dis.pt')
-            # torch.save(Z_state_dict, logger.logdir + '/z.pt')
+            torch.save(Z_state_dict, logger.logdir + '/z.pt')
             if fid_score and fid_score.is_best:
                 torch.save(G_state_dict, logger.logdir + '/gen_best.pt')
                 torch.save(D_state_dict, logger.logdir + '/dis_best.pt')
-                # torch.save(Z_state_dict, logger.logdir + '/z_best.pt')
+                torch.save(Z_state_dict, logger.logdir + '/z_best.pt')
             if step % P.save_every == 0:
                 torch.save(G_state_dict, logger.logdir + f'/gen_{step}.pt')
                 torch.save(D_state_dict, logger.logdir + f'/dis_{step}.pt')
-                # torch.save(Z_state_dict, logger.logdir + f'/z_{step}.pt')
+                torch.save(Z_state_dict, logger.logdir + f'/z_{step}.pt')
             torch.save({
                 'epoch': step,
                 'optim_G': opt_G.state_dict(),
@@ -312,14 +310,14 @@ def worker(gpu, P):
         state_Z = torch.load(f"{P.resume}/z.pt")
         generator.load_state_dict(state_G)
         discriminator.load_state_dict(state_D)
-        z.load_state_dict(state_Z)
+        z = state_Z.numpy()
 
     if P.finetune:
         print(f"=> Loading checkpoint for fine-tuning: '{P.finetune}'")
         state_D = torch.load(f"{P.finetune}/dis.pt")
         discriminator.load_state_dict(state_D, strict=False)
         discriminator.reset_parameters(discriminator.linear)
-        z.load_state_dict(state_Z)
+        z = state_Z.numpy()
         P.comment += 'ft'
 
     generator = nn.SyncBatchNorm.convert_sync_batchnorm(generator)
