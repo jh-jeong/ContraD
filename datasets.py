@@ -1,11 +1,25 @@
 import os
-
+from torch.utils.data import Dataset
 from torchvision import datasets, transforms
 
 DATA_PATH = os.environ.get('DATA_DIR', 'data/')
 
+class IndexedDataset(Dataset):
+    """
+    Wraps another dataset to sample from. Returns the sampled indices during iteration.
+    In other words, instead of producing (X, y) it produces (X, y, idx)
+    """
+    def __init__(self, base_dataset):
+        self.base = base_dataset
 
-def get_dataset(dataset):
+    def __len__(self):
+        return len(self.base)
+
+    def __getitem__(self, idx):
+        img, label = self.base[idx]
+        return (img, label, idx)
+
+def get_dataset(dataset, indexed=False):
     if dataset == 'cifar10' or dataset == 'cifar100':
         image_size = (32, 32, 3)
         transform = transforms.ToTensor()
@@ -17,7 +31,9 @@ def get_dataset(dataset):
 
         train_set = data(DATA_PATH, train=True, transform=transform, download=True)
         test_set = data(DATA_PATH, train=False, transform=transform, download=True)
-
+        if indexed:
+            train_set = IndexedDataset(train_set)
+            test_set = IndexedDataset(test_set)
         return train_set, test_set, image_size
 
     elif dataset == 'cifar10_lin' or dataset == 'cifar100_lin':
@@ -26,6 +42,8 @@ def get_dataset(dataset):
         
         [1] https://github.com/HobbitLong/SupContrast
         """
+        if indexed:
+            raise ValueError("Have not implemented indexed dataset")
 
         image_size = (32, 32, 3)
 
@@ -52,6 +70,8 @@ def get_dataset(dataset):
         
         [1] Zhao et al., Differentiable Augmentation for Data-efficient GAN Training, NeurIPS 2020.
         """
+        if indexed:
+            raise ValueError("Have not implemented indexed dataset")
 
         image_size = (32, 32, 3)
         train_transform = transforms.Compose([
@@ -69,6 +89,9 @@ def get_dataset(dataset):
         return train_set, test_set, image_size
 
     elif dataset == 'celeba128':
+        if indexed:
+            raise ValueError("Have not implemented indexed dataset")
+
         image_size = (128, 128, 3)
         data_path = f"{DATA_PATH}/CelebAMask-HQ/CelebA-128-split"
 
@@ -81,6 +104,9 @@ def get_dataset(dataset):
         return train_set, test_set, image_size
 
     elif dataset == 'afhq_cat':
+        if indexed:
+            raise ValueError("Have not implemented indexed dataset")
+
         image_size = (512, 512, 3)
 
         train_transform = transforms.Compose([
@@ -96,6 +122,9 @@ def get_dataset(dataset):
         return train_set, val_set, image_size
 
     elif dataset == 'afhq_dog':
+        if indexed:
+            raise ValueError("Have not implemented indexed dataset")
+
         image_size = (512, 512, 3)
 
         train_transform = transforms.Compose([
@@ -111,6 +140,9 @@ def get_dataset(dataset):
         return train_set, val_set, image_size
 
     elif dataset == 'afhq_wild':
+        if indexed:
+            raise ValueError("Have not implemented indexed dataset")
+
         image_size = (512, 512, 3)
 
         train_transform = transforms.Compose([

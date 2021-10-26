@@ -1,0 +1,16 @@
+options.dataset = "celeba128"
+options.batch_size = 64
+options.loss = "nonsat"
+options.max_steps = 100000
+options.n_critic = 1
+options.lr = 2e-4
+options.beta = (0.5, 0.999)
+
+options.warmup = 3000
+
+options.fid_size = 3000
+
+RandomCrop.max_pixels = 16
+RandomCrop.width = 128
+HorizontalFlipRandomCrop.max_pixels = 16
+HorizontalFlipRandomCrop.width = 128

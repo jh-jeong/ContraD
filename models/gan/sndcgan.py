@@ -49,7 +49,18 @@ class G_SNDCGAN(nn.Module):
 
     def sample_latent(self, n_samples):
         _device = next(self.parameters()).device
-        return torch.empty(n_samples, self.nz).uniform_(-1, 1).to(_device)
+        latent_origin = torch.empty(n_samples, self.nz).uniform_(-1, 1).to(_device)
+
+        # latent1
+        u = torch.randn(n_samples, self.nz)
+        d = (u ** 2).sum(1) ** 0.5
+        d = d.unsqueeze(1).expand(d.shape[0], self.nz)
+        latent1 = (u / d).to(_device)
+
+        # latent2 from GLO
+        latent2 = torch.randn(n_samples, self.nz)
+        latent2 = F.normalize(latent2).to(_device)
+        return latent2
 
     def reset_parameters(self):
         for m in self.modules():
