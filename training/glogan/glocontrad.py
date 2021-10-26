@@ -101,7 +101,7 @@ def loss_Z_fn(P, D, G, z, z_f, reconstructive_loss_fn, images):
     gen_views = torch.cat([gen_1, gen_2], dim=0)
 
     recon_loss = reconstructive_loss_fn(real_views, gen_views)
-    # simclr_loss = nt_xent4z(z_r1, z_r2, z_f, temperature=P.z_temp, distributed=P.distributed, normalize=True)
+    simclr_loss = nt_xent(z_r1, z_r2, temperature=P.z_temp, distributed=P.distributed, normalize=True)
 
-    # return recon_loss + P.z_contraloss_weight*simclr_loss
-    return recon_loss
+    return recon_loss + P.z_contraloss_weight*simclr_loss
+    # return recon_loss
