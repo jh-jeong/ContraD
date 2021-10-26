@@ -203,7 +203,7 @@ def train(P, opt, train_fn, models, optimizers, train_loader, logger):
         # Essential for training w/ multiple DDP models
         set_grad(generator, True)
         set_grad(discriminator, False)
-        z_batch = torch.zeros((500, 2, 128)).cuda()
+        z_batch = torch.zeros((500, 128)).cuda()
         z_batch = Variable(z_batch, requires_grad=True)
         opt_Z = optim.SGD([
             {'params': generator.parameters(), 'lr': 1},
@@ -226,7 +226,7 @@ def train(P, opt, train_fn, models, optimizers, train_loader, logger):
             loss.backward()
             opt_Z.step()
             losses['Z_loss'].append(loss.item())
-            z[idx] = project_l2_ball(z_batch.data.cpu().numpy().reshape(N, -1)).reshape(N, 2, -1)
+            z[idx] = project_l2_ball(z_batch.data.cpu().numpy())
 
         generator.eval()
         discriminator.eval()
