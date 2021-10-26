@@ -22,7 +22,10 @@ def get_latent(dataset_size, architecture, train_loader, init_method='random'):
 
     # init z
     if init_method == 'random':
-        z = np.random.randn(dataset_size, 2, latent_size)
+
+        #for test
+        z = np.random.randn(dataset_size, latent_size)
+        # z = np.random.randn(dataset_size, 2, latent_size)
     elif init_method == 'pca':
         from sklearn.decomposition import PCA
 
@@ -43,4 +46,4 @@ def get_latent(dataset_size, architecture, train_loader, init_method='random'):
     else:
         raise NotImplementedError()
 
-    return project_l2_ball(z.reshape(dataset_size,-1)).reshape(dataset_size, 2, latent_size)
+    return project_l2_ball(z)
