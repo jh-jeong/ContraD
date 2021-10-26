@@ -203,13 +203,17 @@ def train(P, opt, train_fn, models, optimizers, train_loader, logger):
         # Essential for training w/ multiple DDP models
         set_grad(generator, True)
         set_grad(discriminator, False)
+        z_batch = torch.zeros((500, 2, 128)).cuda()
+        z_batch = Variable(z_batch, requires_grad=True)
+        opt_Z = optim.SGD([
+            {'params': generator.parameters(), 'lr': 1},
+            {'params': z_batch, 'lr': 10}
+        ])
+
         for i in range(opt['n_latent']):
             images, labels, idx = next(train_loader)
             images = images.cuda()
             N = images.shape[0]
-
-            z_batch = torch.zeros((512, 2, 128)).cuda()
-            z_batch = Variable(z_batch, requires_grad=True)
             z_batch.data = torch.FloatTensor(z[idx.numpy()]).cuda()
 
             ## for test glo only
